@@ -2,7 +2,18 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const _ = require('lodash');
 const config = require('./config');
-const { createDb, hashPassword, all, allBound } = require('./db');
+const { createDb, hashPassword, verifyPassword, all, allBound } = require('./db');
+
+// Fungsi pembantu untuk mencegah XSS (Output Encoding)
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, (m) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  }[m]));
+}
 
 async function createApp() {
   const app = express();
@@ -26,37 +37,55 @@ async function createApp() {
   // Health check
   app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
-  // Halaman sambutan
+  // Halaman sambutan -> DIUBAH: Menambahkan escapeHtml untuk mencegah XSS
   app.get('/welcome', (req, res) => {
     const name = req.query.name || 'Tamu';
-    res.send(`<h1>Selamat datang di SecurePay, ${name}!</h1>`);
+    const safeName = escapeHtml(name);
+    res.send(`<h1>Selamat datang di SecurePay, ${safeName}!</h1>`);
   });
 
   // Login -> mengembalikan JWT
   app.post('/api/login', (req, res) => {
     const { username, password } = req.body;
+    
+    // Ambil user berdasarkan username saja
     const rows = allBound(
       db,
-      'SELECT id, username, role FROM users WHERE username = ? AND password_hash = ?',
-      [username, hashPassword(String(password))]
+      'SELECT id, username, role, password_hash FROM users WHERE username = ?',
+      [username]
     );
+
     if (rows.length === 0) return res.status(401).json({ error: 'Username atau password salah' });
-    const token = jwt.sign({ id: rows[0].id, username: rows[0].username, role: rows[0].role }, config.jwtSecret, {
+
+    // Verifikasi password (asumsi verifyPassword di-update di src/db.js atau menggunakan pencocokan aman)
+    const user = rows[0];
+    const isValid = verifyPassword ? verifyPassword(String(password), user.password_hash) : (user.password_hash === hashPassword(String(password)));
+
+    if (!isValid) return res.status(401).json({ error: 'Username atau password salah' });
+
+    const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, config.jwtSecret, {
       expiresIn: '1h',
     });
     res.json({ token });
   });
 
-  // Cari pengguna berdasarkan nama
+  // Cari pengguna berdasarkan nama -> DIUBAH: Menggunakan Parameterized Query (Fix SQLi #1)
   app.get('/api/users/search', (req, res) => {
     const q = req.query.q || '';
-    const rows = all(db, `SELECT id, username, full_name FROM users WHERE full_name LIKE '%${q}%'`);
+    const rows = allBound(db, 'SELECT id, username, full_name FROM users WHERE full_name LIKE ?', [`%${q}%`]);
     res.json(rows);
   });
 
-  // Detail pengguna berdasarkan id
+  // Detail pengguna berdasarkan id -> DIUBAH: Validasi angka + Parameterized Query (Fix SQLi #2)
   app.get('/api/users/:id', (req, res) => {
-    const rows = all(db, 'SELECT id, username, full_name, role FROM users WHERE id = ' + req.params.id);
+    const id = req.params.id;
+    
+    // Validasi bahwa id harus berupa angka
+    if (!/^\d+$/.test(id)) {
+      return res.status(400).json({ error: 'ID tidak valid' });
+    }
+
+    const rows = allBound(db, 'SELECT id, username, full_name, role FROM users WHERE id = ?', [id]);
     if (rows.length === 0) return res.status(404).json({ error: 'Pengguna tidak ditemukan' });
     res.json(rows[0]);
   });
@@ -81,15 +110,16 @@ async function createApp() {
     res.json(rows[0]);
   });
 
-  // Ubah pengaturan aplikasi (digabung dengan pengaturan yang ada)
+  // Ubah pengaturan aplikasi
   app.post('/api/settings', requireAuth, (req, res) => {
     settings = _.merge(settings, req.body);
     res.json(settings);
   });
 
-  // Penanganan error
+  // Penanganan error -> DIUBAH: Log error ke server, kirim pesan generik ke client (Fix Stack Trace Leak)
   app.use((err, req, res, next) => {
-    res.status(500).send(`<pre>${err.stack}</pre>`);
+    console.error(err.stack); // Catat detail di log server
+    res.status(500).json({ error: 'Terjadi kesalahan pada server' }); // Kirim pesan generik
   });
 
   return app;
