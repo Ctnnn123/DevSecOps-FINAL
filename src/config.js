@@ -7,13 +7,12 @@
 module.exports = {
   port: process.env.PORT || 3000,
 
-  // Secret untuk menandatangani JWT (diambil dari environment variable)
-  jwtSecret: process.env.JWT_SECRET || 'dev_secret_key_change_me',
+  // BARIS UJI COBA SECURITY GATE (MEMICU DETEKSI GITLEAKS)
+  TEST_LEAKED_SECRET: "sk_live_1234567890abcdef1234567890",
 
-  // API key payment gateway (diambil dari environment variable)
+  jwtSecret: process.env.JWT_SECRET || 'dev_secret_key_change_me',
   paymentGatewayApiKey: process.env.PAYMENT_GATEWAY_API_KEY || 'dev_payment_key_change_me',
 
-  // Pengaturan default aplikasi
   defaultSettings: {
     currency: 'IDR',
     dailyTransferLimit: 10000000,
