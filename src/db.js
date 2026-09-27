@@ -1,9 +1,25 @@
 const crypto = require('crypto');
 const initSqlJs = require('sql.js');
 
-// Hash password (lihat apakah ini aman?)
-function hashPassword(password) {
-  return crypto.createHash('md5').update(password).digest('hex');
+// Hash password menggunakan scrypt (Aman & Tahan Brute-Force)
+function hashPassword(password, salt = 'static_lab_salt_12345') {
+  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+  return `${salt}:${hash}`;
+}
+
+// Fungsi untuk verifikasi password dengan proteksi Timing Attack
+function verifyPassword(password, storedHash) {
+  if (!storedHash || !storedHash.includes(':')) return false;
+
+  const [salt, originalHash] = storedHash.split(':');
+  const targetHash = crypto.scryptSync(password, salt, 64).toString('hex');
+
+  const bufA = Buffer.from(originalHash, 'hex');
+  const bufB = Buffer.from(targetHash, 'hex');
+
+  if (bufA.length !== bufB.length) return false;
+
+  return crypto.timingSafeEqual(bufA, bufB);
 }
 
 // Membuat database SQLite in-memory berisi data contoh
@@ -26,9 +42,11 @@ async function createDb() {
     ['sari', 'sari123', 'Sari Wulandari', 'customer', 7500000],
     ['andi', 'andi123', 'Andi Pratama', 'customer', 2500000],
   ];
+
   const stmt = db.prepare(
     'INSERT INTO users (username, password_hash, full_name, role, balance) VALUES (?, ?, ?, ?, ?)'
   );
+
   for (const [u, p, name, role, bal] of seed) {
     stmt.run([u, hashPassword(p), name, role, bal]);
   }
@@ -55,4 +73,4 @@ function allBound(db, sql, params) {
   return rows;
 }
 
-module.exports = { createDb, hashPassword, all, allBound };
+module.exports = { createDb, hashPassword, verifyPassword, all, allBound };
