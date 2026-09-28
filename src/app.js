@@ -37,6 +37,9 @@ async function createApp() {
   // Health check
   app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
+  // Redirect root agar ZAP tidak mendapat 404
+  app.get('/', (req, res) => res.redirect('/welcome'));
+
   // Halaman sambutan -> DIUBAH: Menambahkan escapeHtml untuk mencegah XSS
   app.get('/welcome', (req, res) => {
     const name = req.query.name || 'Tamu';

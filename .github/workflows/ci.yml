@@ -4,9 +4,10 @@ on:
   push:
   pull_request:
 
-# Prinsip least privilege: workflow hanya boleh membaca isi repo
+# Prinsip least privilege: workflow hanya boleh membaca repo dan menulis issue
 permissions:
   contents: read
+  issues: write # <-- IZIN WRITE DITAMBAHKAN DI SINI
 
 env:
   GITLEAKS_VERSION: "8.30.1"
