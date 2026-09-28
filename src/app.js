@@ -1,6 +1,7 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const _ = require('lodash');
+const helmet = require('helmet'); // Menambahkan import helmet
 const config = require('./config');
 const { createDb, hashPassword, verifyPassword, all, allBound } = require('./db');
 
@@ -17,6 +18,13 @@ function escapeHtml(str) {
 
 async function createApp() {
   const app = express();
+
+  // 1. Gunakan helmet untuk mengamankan HTTP Headers secara otomatis (CSP, Clickjacking, dll)
+  app.use(helmet()); 
+  
+  // 2. Matikan informasi X-Powered-By secara manual (mencegah kebocoran info Express.js)
+  app.disable('x-powered-by');
+
   const db = await createDb();
   let settings = _.cloneDeep(config.defaultSettings);
 
