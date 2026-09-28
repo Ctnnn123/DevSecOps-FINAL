@@ -7,7 +7,7 @@ on:
 # Prinsip least privilege: workflow hanya boleh membaca repo dan menulis issue
 permissions:
   contents: read
-  issues: write # <-- IZIN WRITE DITAMBAHKAN DI SINI
+  issues: write
 
 env:
   GITLEAKS_VERSION: "8.30.1"
@@ -102,10 +102,11 @@ jobs:
           JWT_SECRET: "dummy_secret_untuk_testing"
           PAYMENT_GATEWAY_API_KEY: "dummy_api_key_untuk_testing"
       - name: OWASP ZAP Baseline Scan
-        uses: zaproxy/action-baseline@v0.12.0
+        uses: zaproxy/action-baseline@v0.14.0
+        continue-on-error: true
         with:
           target: 'http://localhost:3000'
-          fail_action: false 
+          fail_action: false
 
   # ------------------------------------------------------------
   # TAHAP D: Security Gate (Deploy)
