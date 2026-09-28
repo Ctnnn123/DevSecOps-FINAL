@@ -15,14 +15,12 @@ env:
 
 jobs:
   # ------------------------------------------------------------
-  # CI dasar: install -> unit test.  (sudah HIJAU dari awal)
-  # Tugas Anda: menambahkan security check ke pipeline ini.
+  # CI dasar: install -> unit test
   # ------------------------------------------------------------
   build-test:
     name: Build & Unit Test
     runs-on: ubuntu-latest
     steps:
-      # Action di-pin ke commit SHA (bukan tag) agar tidak bisa diganti diam-diam
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
@@ -30,14 +28,19 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+        env:
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          PAYMENT_GATEWAY_API_KEY: ${{ secrets.PAYMENT_GATEWAY_API_KEY }}
 
-  # >>> TAHAP A: tambahkan job secret-scan di bawah ini
+  # ------------------------------------------------------------
+  # TAHAP A: Secret Scan (Gitleaks)
+  # ------------------------------------------------------------
   secret-scan:
     name: Secret Scan (Gitleaks)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-      - name: Install Gitleaks (versi di-pin + verifikasi checksum)
+      - name: Install Gitleaks
         run: |
           curl -sSfL -o "$RUNNER_TEMP/gitleaks.tar.gz" \
             "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
@@ -47,7 +50,9 @@ jobs:
       - name: Scan secret di source code
         run: gitleaks dir . --redact --verbose
 
-  # >>> TAHAP B: tambahkan job dependency-scan
+  # ------------------------------------------------------------
+  # TAHAP B: Dependency Scan (npm audit)
+  # ------------------------------------------------------------
   dependency-scan:
     name: Dependency Scan (npm audit)
     runs-on: ubuntu-latest
@@ -56,9 +61,11 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 22
-      # Gagal jika ada vulnerability tingkat HIGH atau CRITICAL
       - run: npm audit --audit-level=high
-  # >>> TAHAP C: tambahkan job sast
+
+  # ------------------------------------------------------------
+  # TAHAP C: SAST (Semgrep)
+  # ------------------------------------------------------------
   sast:
     name: SAST (Semgrep)
     runs-on: ubuntu-latest
@@ -71,10 +78,40 @@ jobs:
           echo "$RUNNER_TEMP/semgrep-venv/bin" >> "$GITHUB_PATH"
       - name: Jalankan SAST
         run: semgrep scan --config .semgrep/ --metrics=off --disable-version-check --error src
-  # >>> TAHAP D: tambahkan job deploy (security gate)
+
+  # ------------------------------------------------------------
+  # TAHAP E: DAST (OWASP ZAP)
+  # ------------------------------------------------------------
+  dast:
+    name: DAST (OWASP ZAP)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm ci
+      - name: Jalankan server aplikasi (Background)
+        run: |
+          npm start & 
+          sleep 10 
+        env:
+          JWT_SECRET: "dummy_secret_untuk_testing"
+          PAYMENT_GATEWAY_API_KEY: "dummy_api_key_untuk_testing"
+      - name: OWASP ZAP Baseline Scan
+        uses: zaproxy/action-baseline@v0.12.0
+        with:
+          target: 'http://localhost:3000'
+          fail_action: true 
+
+  # ------------------------------------------------------------
+  # TAHAP D: Security Gate (Deploy)
+  # ------------------------------------------------------------
   deploy:
     name: Deploy ke Staging (simulasi)
-    needs: [build-test, secret-scan, dependency-scan, sast]
+    needs: [build-test, secret-scan, dependency-scan, sast, dast]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
